@@ -17,6 +17,8 @@ command line.
   `запусти калькулятор`). Scans `Program Files`, Start Menu and user app folders, then caches them.
 - 🌐 **Browser control** — detects Chrome, Firefox, Opera, Yandex, Edge, Brave; asks which one
   to open if several are installed.
+- 🔉 **System volume control** — `громче`, `тише`, `громкость на 50 процентов`, `выключи звук`.
+  Precise level via `pycaw`, with a media-key fallback.
 - ⏱️ **Timers & alarms** — `таймер на 5 минут`, `будильник на 7 утра`, with audible beeps.
 - 🗂️ **File operations** — move files (`перемести файл отчёт в загрузки`) and replace text inside
   text files (with an automatic `.bak` backup before writing).
@@ -84,6 +86,9 @@ On start:
 | `брат, закрой телеграм`              | Closes Telegram (via `taskkill`)      |
 | `брат, заверши хром`                 | Closes the browser process            |
 | `брат, браузер`                      | Opens your browser (asks which one)   |
+| `брат, громче` / `брат, тише`        | Volume up / down by 10%               |
+| `брат, громкость на 50 процентов`    | Sets system volume to 50%             |
+| `брат, выключи звук` / `включи звук`  | Mute / unmute                         |
 | `брат, открой ютуб`                  | Opens YouTube                         |
 | `брат, найди на ютубе котики`        | Opens a YouTube search for "котики"   |
 | `брат, таймер на 10 минут`           | Starts a 10-minute timer              |

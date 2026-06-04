@@ -934,6 +934,129 @@ def parse_close_command(text, installed_apps):
     return True
 
 # ============================================
+# ГРОМКОСТЬ ЗВУКА
+# Команды:
+#   "громче" / "тише"                  -> +/- 10%
+#   "громче на 20 процентов"           -> +/- N%
+#   "громкость на 50 процентов"        -> установить 50%
+#   "громкость на максимум" / "минимум"
+#   "выключи звук" / "включи звук"     -> mute / unmute
+#   "какая громкость"                  -> сказать текущий уровень
+# Основной способ — pycaw (точная установка). Запасной — медиаклавиши.
+# ============================================
+def _volume_iface():
+    from ctypes import cast, POINTER
+    from comtypes import CLSCTX_ALL
+    from pycaw.pycaw import AudioUtilities, IAudioEndpointVolume
+    speakers = AudioUtilities.GetSpeakers()
+    # Новый pycaw (>=2023): GetSpeakers() возвращает обёртку AudioDevice
+    # с готовым .EndpointVolume. Старый — IMMDevice с методом .Activate.
+    endpoint = getattr(speakers, "EndpointVolume", None)
+    if endpoint is not None:
+        return endpoint
+    iface = speakers.Activate(IAudioEndpointVolume._iid_, CLSCTX_ALL, None)
+    return cast(iface, POINTER(IAudioEndpointVolume))
+
+def _get_volume_scalar():
+    """Текущий уровень 0.0..1.0 или None если pycaw недоступен."""
+    try:
+        return _volume_iface().GetMasterVolumeLevelScalar()
+    except Exception:
+        return None
+
+def _try_set_volume(value):
+    try:
+        _volume_iface().SetMasterVolumeLevelScalar(max(0.0, min(1.0, value)), None)
+        return True
+    except Exception:
+        return False
+
+def _try_set_mute(state):
+    try:
+        _volume_iface().SetMute(1 if state else 0, None)
+        return True
+    except Exception:
+        return False
+
+def _media_key(key, n=1):
+    try:
+        import pyautogui
+        for _ in range(n):
+            pyautogui.press(key)
+        return True
+    except Exception:
+        return False
+
+def parse_volume_command(text):
+    """ Управление системной громкостью. Возвращает True если команда была про звук. """
+    t = text.lower()
+    vol_words = ["громкост", "громче", "погромче", "тише", "потише",
+                 "звук", "громко", "тихо", "мьют", "mute"]
+    if not any(w in t for w in vol_words):
+        return False
+
+    num_match = re.search(r'(\d{1,3})', t)
+    num = int(num_match.group(1)) if num_match else None
+
+    # MUTE / UNMUTE
+    if any(w in t for w in ["включи звук", "верни звук", "со звуком", "верни громкость"]):
+        if not _try_set_mute(False):
+            _media_key("volumemute")
+        speak("Звук включён")
+        return True
+    if any(w in t for w in ["выключи звук", "отключи звук", "без звука",
+                            "убери звук", "заглуши", "мьют", "mute", "тишина"]):
+        if not _try_set_mute(True):
+            _media_key("volumemute")
+        speak("Звук выключен")
+        return True
+
+    up = any(w in t for w in ["громче", "погромче", "прибавь", "добавь",
+                              "увеличь", "повыси", "подними"])
+    down = any(w in t for w in ["тише", "потише", "убавь", "сбавь",
+                                "уменьши", "понизь", "опусти"])
+    mx = any(w in t for w in ["максимум", "максимальн", "на полную", "полную", "на всю"])
+    mn = any(w in t for w in ["минимум", "минимальн"])
+
+    cur = _get_volume_scalar()
+
+    if mx:
+        target = 1.0
+    elif mn:
+        target = 0.0
+    elif up:
+        step = (num if num else 10) / 100.0
+        target = (cur if cur is not None else 0.5) + step
+    elif down:
+        step = (num if num else 10) / 100.0
+        target = (cur if cur is not None else 0.5) - step
+    elif num is not None:
+        target = num / 100.0
+    else:
+        # просто спросили уровень
+        if cur is not None:
+            speak(f"Громкость {int(round(cur * 100))} процентов")
+        else:
+            speak("Не могу определить уровень громкости")
+        return True
+
+    target = max(0.0, min(1.0, target))
+    if _try_set_volume(target):
+        speak(f"Громкость {int(round(target * 100))} процентов")
+    else:
+        # запасной путь — медиаклавиши (только относительно)
+        if mx:
+            _media_key("volumeup", 50)
+        elif mn:
+            _media_key("volumedown", 50)
+        elif up:
+            _media_key("volumeup", max(1, (num if num else 10) // 2))
+        elif down:
+            _media_key("volumedown", max(1, (num if num else 10) // 2))
+        speak("Готово")
+    return True
+
+# ============================================
 # ОБРАБОТЧИК КОМАНД
 # ============================================
 def process_command(text, installed_apps, installed_browsers, recognizer, settings):
@@ -968,6 +1091,9 @@ def process_command(text, installed_apps, installed_browsers, recognizer, settin
         return
     # 4.6 Закрытие приложения
     if parse_close_command(text, installed_apps):
+        return
+    # 4.7 Громкость звука
+    if parse_volume_command(text):
         return
     # 5. Убираем триггерные слова
     clean_text = text
