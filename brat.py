@@ -104,8 +104,13 @@ def _edge_say(text):
             pass
 
 speech_queue = queue.Queue()
+# Счётчик незавершённой озвучки. Растёт в speak() СРАЗУ (до возврата из команды),
+# падает в воркере после реального проигрывания. Гейт против самопрослушивания.
+_speech_pending = 0
+_speech_lock = threading.Lock()
 
 def speak_worker():
+    global _speech_pending
     while True:
         text = speech_queue.get()
         if text is None:
@@ -121,6 +126,16 @@ def speak_worker():
                 _offline_say(text)
         except Exception as e:
             print(f"Ошибка озвучки: {e}")
+        finally:
+            with _speech_lock:
+                _speech_pending -= 1
+
+def wait_until_quiet(timeout=25):
+    """Блокируется, пока ассистент не договорит всю очередь озвучки."""
+    start = time.time()
+    while _speech_pending > 0 and (time.time() - start) < timeout:
+        time.sleep(0.08)
+    time.sleep(0.3)   # дать звуку в колонках затихнуть перед записью
 
 worker_thread = threading.Thread(target=speak_worker, daemon=True)
 worker_thread.start()
@@ -129,12 +144,15 @@ worker_thread.start()
 on_speak = None
 
 def speak(text):
+    global _speech_pending
     print(f"Брат: {text}")
     if on_speak:
         try:
             on_speak(text)
         except Exception:
             pass
+    with _speech_lock:
+        _speech_pending += 1
     speech_queue.put(text)
 
 # ============================================
@@ -762,6 +780,9 @@ def handle_browser_command(installed_browsers, recognizer):
 # РАСПОЗНАВАНИЕ РЕЧИ
 # ============================================
 def _listen_once(recognizer, timeout=5, phrase_limit=8):
+    # Не слушаем, пока ассистент говорит — иначе микрофон ловит его же голос
+    # ("Открываю Ютуб" -> снова открывает -> петля).
+    wait_until_quiet()
     try:
         with sr.Microphone() as source:
             recognizer.adjust_for_ambient_noise(source, duration=0.2)
