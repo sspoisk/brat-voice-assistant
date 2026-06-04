@@ -160,7 +160,7 @@ def speak(text):
 # ============================================
 SETTINGS_FILE = "settings.json"
 DEFAULT_SETTINGS = {
-    "wake_words": ["бот"],
+    "wake_words": ["джарвис", "жарвис", "джарвес"],
     "require_wake": True,    # True -> команды только после кодового слова
     "user_name": "Слава",
     "speech_rate": 195,
