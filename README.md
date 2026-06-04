@@ -114,6 +114,10 @@ no API key) via the `edge-tts` package. Default voice: `ru-RU-DmitryNeural` (liv
   `DEV_MODE = True` by default so it never blocks personal use). The GUI is a thin shell over the
   same engine — every voice command and voice below works identically in both.
 
+By default the assistant runs **without a wake word** (`require_wake: false`) — just say a command
+and it executes; the word «брат» is optional and stripped if spoken. Turn the wake word back on in
+the GUI settings ("Требовать слово «брат»") if you prefer push-to-talk style.
+
 ## Usage (console)
 
 ```bash

@@ -179,6 +179,11 @@ class BratApp(ctk.CTk):
         self.after(800, lambda: brat.speak(
             f"Привет, {self.settings.get('user_name', 'Слава')}! Брат готов."))
 
+    def _wake_hint(self):
+        if self.settings.get("require_wake", False):
+            return f"Скажи «{', '.join(self.wake_words)}», затем команду"
+        return "Просто говори команду — слово «брат» не обязательно"
+
     # ---------- UI ----------
     def _build_ui(self):
         ctk.CTkLabel(self, text="БРАТ", font=("Arial", 36, "bold"),
@@ -186,7 +191,7 @@ class BratApp(ctk.CTk):
         ctk.CTkLabel(self, text="Голосовой ассистент", font=("Arial", 14),
                      text_color=TEXT_SEC).pack(pady=(0, 4))
         self.wake_label = ctk.CTkLabel(
-            self, text=f"Скажи «{', '.join(self.wake_words)}», затем команду",
+            self, text=self._wake_hint(),
             font=("Arial", 12), text_color=ACCENT2)
         self.wake_label.pack(pady=(0, 8))
 
@@ -282,11 +287,16 @@ class BratApp(ctk.CTk):
                 continue
             self.log(f"🗣 Услышал: {text}")
 
+            require_wake = self.settings.get("require_wake", False)
             matched = next((w for w in self.wake_words if w in text), None)
-            if not matched:
+
+            # Режим без активации: любая фраза = команда.
+            # Слово 'брат' срезаем, если оно прозвучало.
+            if require_wake and not matched:
+                self.log("💤 Нет слова активации — пропускаю")
                 continue
 
-            command = text.replace(matched, "").strip()
+            command = text.replace(matched, "").strip() if matched else text.strip()
             if not command:
                 command = "__wake_only__"
 
@@ -359,6 +369,15 @@ class BratApp(ctk.CTk):
         ctk.CTkSwitch(fr_edge, text="", variable=edge_var, progress_color=ACCENT2).pack(
             side="right", padx=12, pady=10)
 
+        # Требовать слово активации
+        fr_wake = ctk.CTkFrame(win, fg_color=BG_CARD, corner_radius=10)
+        fr_wake.pack(fill="x", padx=20, pady=5)
+        ctk.CTkLabel(fr_wake, text="Требовать слово «брат»", font=("Arial", 12), text_color=TEXT_SEC,
+                     width=150, anchor="w").pack(side="left", padx=12, pady=10)
+        reqwake_var = ctk.BooleanVar(value=self.settings.get("require_wake", False))
+        ctk.CTkSwitch(fr_wake, text="", variable=reqwake_var, progress_color=ACCENT2).pack(
+            side="right", padx=12, pady=10)
+
         def _save():
             self.settings["user_name"] = name_var.get().strip() or "Слава"
             words = [w.strip() for w in wake_var.get().split(",") if w.strip()]
@@ -367,12 +386,13 @@ class BratApp(ctk.CTk):
             self.settings["voice"] = voice_var.get().strip().lower() or "pavel"
             self.settings["speech_rate"] = rate_var.get()
             self.settings["tts_engine"] = "edge" if edge_var.get() else "offline"
+            self.settings["require_wake"] = bool(reqwake_var.get())
 
             brat.engine.setProperty('rate', self.settings["speech_rate"])
             brat.apply_voice(self.settings["voice"])
             brat.TTS_MODE = self.settings["tts_engine"]
             self.wake_words = self.settings["wake_words"]
-            self.wake_label.configure(text=f"Скажи «{', '.join(self.wake_words)}», затем команду")
+            self.wake_label.configure(text=self._wake_hint())
             brat.save_settings(self.settings)
             self.log("✅ Настройки сохранены")
             win.destroy()
