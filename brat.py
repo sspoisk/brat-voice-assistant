@@ -10,6 +10,7 @@ import queue
 import glob
 import json
 import random
+import urllib.parse
 from pathlib import Path
 from fuzzywuzzy import fuzz, process
 
@@ -821,6 +822,43 @@ def parse_file_command(text, recognizer):
     return False
 
 # ============================================
+# YOUTUBE
+# Команды:
+#   "открой ютуб"            -> главная страница
+#   "найди на ютубе котики"  -> поиск по запросу
+#   "включи на ютубе джаз"   -> поиск по запросу
+# ============================================
+YOUTUBE_WORDS = ["ютубе", "ютуб", "ютьюб", "ютюб", "youtube", "ютьюбе"]
+
+def parse_youtube_command(text):
+    """ Если в команде есть 'ютуб' — открывает YouTube.
+    С хвостом после слова 'ютуб' — открывает поиск по этому запросу.
+    Возвращает True если команда была про YouTube. """
+    text_lower = text.lower()
+    if not any(w in text_lower for w in YOUTUBE_WORDS):
+        return False
+
+    # Чистим триггеры, предлоги и само слово 'ютуб' — остаётся поисковый запрос
+    junk = ["открой", "открыть", "запусти", "запустить", "включи", "включить",
+            "найди", "поищи", "покажи", "на", "в", "мне"] + YOUTUBE_WORDS
+    query = text_lower
+    for w in junk:
+        query = re.sub(r'\b' + re.escape(w) + r'\b', ' ', query)
+    query = re.sub(r'\s+', ' ', query).strip()
+
+    if query:
+        url = "https://www.youtube.com/results?search_query=" + urllib.parse.quote(query)
+        speak(f"Ищу на Ютубе: {query}")
+    else:
+        url = "https://youtube.com"
+        speak("Открываю Ютуб")
+    try:
+        os.startfile(url)
+    except Exception as e:
+        speak(f"Не смог открыть Ютуб: {e}")
+    return True
+
+# ============================================
 # ОБРАБОТЧИК КОМАНД
 # ============================================
 def process_command(text, installed_apps, installed_browsers, recognizer, settings):
@@ -849,6 +887,9 @@ def process_command(text, installed_apps, installed_browsers, recognizer, settin
         return
     # 4. Таймеры и будильники
     if parse_time_command(text):
+        return
+    # 4.5 YouTube (открыть / поиск голосом)
+    if parse_youtube_command(text):
         return
     # 5. Убираем триггерные слова
     clean_text = text

@@ -82,6 +82,8 @@ On start:
 | ------------------------------------ | ------------------------------------- |
 | `брат, открой телеграм`              | Launches Telegram                     |
 | `брат, браузер`                      | Opens your browser (asks which one)   |
+| `брат, открой ютуб`                  | Opens YouTube                         |
+| `брат, найди на ютубе котики`        | Opens a YouTube search for "котики"   |
 | `брат, таймер на 10 минут`           | Starts a 10-minute timer              |
 | `брат, будильник на 7 утра`          | Sets an alarm for 7:00                |
 | `брат, который час`                  | Tells the current time                |
