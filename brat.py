@@ -11,6 +11,7 @@ import glob
 import json
 import random
 import urllib.parse
+import urllib.request
 from pathlib import Path
 from fuzzywuzzy import fuzz, process
 
@@ -18,13 +19,46 @@ from fuzzywuzzy import fuzz, process
 # ГОЛОСОВОЙ ДВИЖОК
 # ============================================
 engine = pyttsx3.init()
-engine.setProperty('rate', 180)
+engine.setProperty('rate', 195)   # чуть бодрее обычного — "жизнерадостный" темп
 engine.setProperty('volume', 1.0)
-voices = engine.getProperty('voices')
-for voice in voices:
-    if 'russian' in voice.name.lower() or 'microsoft irina' in voice.name.lower():
-        engine.setProperty('voice', voice.id)
-        break
+
+def apply_voice(prefer="pavel"):
+    """ Выбирает голос: сначала по подстроке prefer (напр. 'pavel'/'irina'),
+    затем мужской русский (Pavel), затем любой русский, иначе системный.
+    Pavel (мужской) живёт в OneCore; если его нет в SAPI5 — см. README
+    (одна команда reg copy открывает его для pyttsx3). """
+    prefer = (prefer or "").lower()
+    voices = engine.getProperty('voices')
+    chosen = None
+    if prefer:
+        chosen = next((v for v in voices if prefer in v.name.lower()), None)
+    if not chosen:
+        chosen = next((v for v in voices if 'pavel' in v.name.lower()), None)
+    if not chosen:
+        chosen = next((v for v in voices if 'russian' in v.name.lower()), None)
+    if not chosen:
+        return None
+
+    # Надёжная установка напрямую через SAPI: pyttsx3 setProperty('voice')
+    # не переключает голос, скопированный из OneCore (напр. Pavel) —
+    # остаётся прежний. Поэтому ищем токен по описанию и ставим сами.
+    set_ok = False
+    try:
+        tts = engine.proxy._driver._tts
+        all_tokens = tts.GetVoices()
+        for i in range(all_tokens.Count):
+            tk = all_tokens.Item(i)
+            if tk.GetDescription() == chosen.name:
+                tts.Voice = tk
+                set_ok = True
+                break
+    except Exception:
+        set_ok = False
+    if not set_ok:
+        engine.setProperty('voice', chosen.id)
+    return chosen
+
+apply_voice("pavel")
 
 speech_queue = queue.Queue()
 
@@ -53,8 +87,10 @@ SETTINGS_FILE = "settings.json"
 DEFAULT_SETTINGS = {
     "wake_words": ["брат"],
     "user_name": "Слава",
-    "speech_rate": 180,
+    "speech_rate": 195,
     "speech_volume": 1.0,
+    "weather_city": "Харьков",
+    "voice": "pavel",
     "custom_aliases": {},
 }
 
@@ -133,7 +169,9 @@ def settings_menu(settings):
         print(f" 3. Скорость речи : {settings['speech_rate']} (100-300)")
         print(f" 4. Громкость : {settings['speech_volume']} (0.0-1.0)")
         print(f" 5. Мои алиасы команд : {len(settings['custom_aliases'])} шт.")
-        print(f" 6. Сбросить настройки")
+        print(f" 6. Город для погоды : {settings.get('weather_city', 'Харьков')}")
+        print(f" 7. Голос (м/ж)       : {settings.get('voice', 'pavel')}")
+        print(f" 8. Сбросить настройки")
         print(f" 0. Выйти из настроек")
         print("="*50)
         choice = input("Выбери пункт: ").strip()
@@ -191,6 +229,31 @@ def settings_menu(settings):
         elif choice == "5":
             _aliases_menu(settings)
         elif choice == "6":
+            print(f"\nТекущий город: {settings.get('weather_city', 'Харьков')}")
+            city = input("Введи город для погоды: ").strip()
+            if city:
+                settings["weather_city"] = city
+                save_settings(settings)
+                print(f"Город погоды: {city}")
+            else:
+                print("Не изменено.")
+        elif choice == "7":
+            print(f"\nТекущий голос: {settings.get('voice', 'pavel')}")
+            print("Доступные русские: pavel (мужской), irina (женский)")
+            v = input("Введи голос (pavel/irina или часть имени): ").strip().lower()
+            if v:
+                chosen = apply_voice(v)
+                if chosen:
+                    settings["voice"] = v
+                    save_settings(settings)
+                    print(f"Голос: {chosen.name}")
+                    engine.say("Проверка голоса. Теперь говорю так.")
+                    engine.runAndWait()
+                else:
+                    print(f"Голос '{v}' не найден в системе. Не изменено.")
+            else:
+                print("Не изменено.")
+        elif choice == "8":
             confirm = input("Сбросить ВСЕ настройки? (да/нет): ").strip().lower()
             if confirm == "да":
                 settings.update(DEFAULT_SETTINGS.copy())
@@ -1109,6 +1172,190 @@ def parse_screenshot_command(text):
     return True
 
 # ============================================
+# УПРАВЛЕНИЕ МУЗЫКОЙ / МЕДИА
+# Команды (работают с активным плеером: Spotify, браузер, и т.д.):
+#   "пауза" / "плей" / "продолжи"      -> play/pause (одна кнопка-переключатель)
+#   "следующий трек" / "переключи песню"
+#   "предыдущий трек" / "прошлая песня"
+# Через системные медиаклавиши. ВАЖНО: слово "стоп" не используем —
+# в главном цикле оно завершает помощника.
+# ============================================
+def parse_media_command(text):
+    """ Управление воспроизведением. Возвращает True если команда была медийной. """
+    t = text.lower()
+
+    # Следующий трек
+    if any(w in t for w in ["следующ", "переключи песн", "переключи трек",
+                            "дальше песн", "дальше трек", "next track", "вперёд песн"]):
+        _media_key("nexttrack")
+        speak("Следующий трек")
+        return True
+
+    # Предыдущий трек
+    if any(w in t for w in ["предыдущ", "прошл", "назад песн", "назад трек",
+                            "previous track", "верни песн"]):
+        _media_key("prevtrack")
+        speak("Предыдущий трек")
+        return True
+
+    # Play / Pause (одна системная кнопка-переключатель)
+    # ВНИМАНИЕ: "стоп" нельзя — главный цикл по нему завершает помощника
+    pause_words = ["пауз", "останови музык", "останови трек", "pause"]
+    play_words = ["плей", "play", "продолж", "возобнов", "играй музык", "включи воспроизвед"]
+    if any(w in t for w in pause_words):
+        _media_key("playpause")
+        speak("Ставлю на паузу")
+        return True
+    if any(w in t for w in play_words):
+        _media_key("playpause")
+        speak("Продолжаю")
+        return True
+
+    return False
+
+# ============================================
+# ПОГОДА (wttr.in, без ключа)
+# Команды:
+#   "погода"  /  "какая погода"  /  "погода в Москве"
+# ============================================
+# wttr.in/WWO не локализует описание -> своя таблица кодов погоды на русском
+WEATHER_CODES_RU = {
+    "113": "ясно", "116": "переменная облачность", "119": "облачно",
+    "122": "пасмурно", "143": "дымка", "176": "местами дождь",
+    "179": "местами снег", "182": "местами дождь со снегом",
+    "185": "местами ледяная морось", "200": "возможна гроза",
+    "227": "метель", "230": "сильная метель", "248": "туман",
+    "260": "ледяной туман", "263": "местами лёгкая морось",
+    "266": "лёгкая морось", "281": "ледяная морось",
+    "284": "сильная ледяная морось", "293": "местами небольшой дождь",
+    "296": "небольшой дождь", "299": "временами умеренный дождь",
+    "302": "умеренный дождь", "305": "временами сильный дождь",
+    "308": "сильный дождь", "311": "лёгкий ледяной дождь",
+    "314": "умеренный или сильный ледяной дождь", "317": "лёгкий дождь со снегом",
+    "320": "умеренный или сильный дождь со снегом", "323": "местами лёгкий снег",
+    "326": "лёгкий снег", "329": "местами умеренный снег", "332": "умеренный снег",
+    "335": "местами сильный снег", "338": "сильный снег", "350": "ледяная крупа",
+    "353": "небольшой ливень", "356": "умеренный или сильный ливень",
+    "359": "проливной ливень", "362": "лёгкий ливневый дождь со снегом",
+    "365": "умеренный или сильный дождь со снегом", "368": "лёгкий снегопад",
+    "371": "умеренный или сильный снегопад", "374": "лёгкая ледяная крупа",
+    "377": "умеренная или сильная ледяная крупа", "386": "местами дождь с грозой",
+    "389": "сильный дождь с грозой", "392": "местами снег с грозой",
+    "395": "сильный снег с грозой",
+}
+
+def parse_weather_command(text, settings):
+    """ Текущая погода через wttr.in. Возвращает True если команда была про погоду. """
+    t = text.lower()
+    if not any(w in t for w in ["погод", "сколько градус", "температура на улице", "на улице тепло"]):
+        return False
+
+    city = None
+    m = re.search(r'(?:в|во)\s+([а-яё\-]+(?:\s+[а-яё\-]+)?)', t)
+    if m:
+        city = re.sub(r'\b(сейчас|сегодня|завтра|на|улице|градусов?)\b', ' ', m.group(1)).strip()
+    if not city:
+        city = settings.get("weather_city", "Харьков")
+
+    try:
+        url = "https://wttr.in/" + urllib.parse.quote(city) + "?format=j1&lang=ru"
+        req = urllib.request.Request(url, headers={"User-Agent": "curl/8.0"})
+        with urllib.request.urlopen(req, timeout=8) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+        cur = data["current_condition"][0]
+        temp = cur["temp_C"]
+        feels = cur["FeelsLikeC"]
+        desc = WEATHER_CODES_RU.get(str(cur.get("weatherCode", "")),
+                                    cur["weatherDesc"][0]["value"]).capitalize()
+        city_say = city[:1].upper() + city[1:]
+        speak(f"В городе {city_say}: {temp} градусов, ощущается как {feels}. {desc}.")
+    except Exception as e:
+        speak(f"Не смог получить погоду: {e}")
+    return True
+
+# ============================================
+# БУФЕР ОБМЕНА
+# Команды:
+#   "запиши в буфер" / "скопируй в буфер" -> диктуешь текст -> в буфер
+#   "вставь" / "вставь текст"             -> Ctrl+V в активное окно
+# ============================================
+def _set_clipboard(text):
+    """Кладёт текст в буфер. True/False."""
+    try:
+        import pyperclip
+        pyperclip.copy(text)
+        return True
+    except Exception:
+        pass
+    # запасной путь — системная утилита clip (UTF-16LE)
+    try:
+        p = subprocess.Popen("clip", stdin=subprocess.PIPE)
+        p.communicate(text.encode("utf-16-le"))
+        return p.returncode == 0
+    except Exception:
+        return False
+
+def parse_clipboard_command(text, recognizer):
+    """ Работа с буфером обмена. Возвращает True если команда была про буфер. """
+    t = text.lower()
+
+    # Вставка в активное окно
+    if any(w in t for w in ["вставь", "вставка", "вставить текст", "вставить из буфера"]):
+        try:
+            import pyautogui
+            speak("Вставляю через три секунды, переключись на нужное окно")
+            time.sleep(3)
+            pyautogui.hotkey('ctrl', 'v')
+        except Exception as e:
+            speak(f"Не смог вставить: {e}")
+        return True
+
+    # Диктовка текста в буфер
+    if any(w in t for w in ["буфер", "скопир", "продиктую", "надиктую",
+                            "запиши текст", "сохрани текст"]):
+        speak("Говори текст, я скопирую в буфер")
+        dictated = _listen_once(recognizer, timeout=12)
+        if not dictated:
+            speak("Не услышал текст")
+            return True
+        if _set_clipboard(dictated):
+            speak("Скопировал в буфер. Вставляй через Ctrl+V или скажи: вставь")
+        else:
+            speak("Не получилось скопировать в буфер")
+        return True
+
+    return False
+
+# ============================================
+# БЛОКИРОВКА / СОН ПК
+# Команды:
+#   "заблокируй" / "блокировка"   -> экран блокировки
+#   "спящий режим" / "усыпи"      -> сон
+# ============================================
+def parse_power_command(text):
+    """ Блокировка экрана или сон. Возвращает True если команда была про питание. """
+    t = text.lower()
+
+    if any(w in t for w in ["заблокируй", "блокировк", "запри комп", "запри экран", "залочь"]):
+        speak("Блокирую")
+        try:
+            subprocess.Popen("rundll32.exe user32.dll,LockWorkStation")
+        except Exception as e:
+            speak(f"Не смог заблокировать: {e}")
+        return True
+
+    if any(w in t for w in ["спящий режим", "режим сна", "усыпи", "уйти в сон",
+                            "сон компьютер", "засни компьютер"]):
+        speak("Ухожу в спящий режим")
+        try:
+            os.system("rundll32.exe powrprof.dll,SetSuspendState 0,1,0")
+        except Exception as e:
+            speak(f"Не смог уйти в сон: {e}")
+        return True
+
+    return False
+
+# ============================================
 # ОБРАБОТЧИК КОМАНД
 # ============================================
 def process_command(text, installed_apps, installed_browsers, recognizer, settings):
@@ -1150,6 +1397,18 @@ def process_command(text, installed_apps, installed_browsers, recognizer, settin
     # 4.8 Скриншот
     if parse_screenshot_command(text):
         return
+    # 4.9 Музыка / медиа (play, pause, next, prev)
+    if parse_media_command(text):
+        return
+    # 4.10 Погода
+    if parse_weather_command(text, settings):
+        return
+    # 4.11 Буфер обмена (диктовка / вставка)
+    if parse_clipboard_command(text, recognizer):
+        return
+    # 4.12 Блокировка / сон ПК
+    if parse_power_command(text):
+        return
     # 5. Убираем триггерные слова
     clean_text = text
     for word in sorted(trigger_words, key=len, reverse=True):
@@ -1182,6 +1441,7 @@ def main():
     settings = load_settings()
     engine.setProperty('rate', settings["speech_rate"])
     engine.setProperty('volume', settings["speech_volume"])
+    apply_voice(settings.get("voice", "pavel"))
     print("\n" + "="*50)
     print(" Нажми S + Enter чтобы зайти в настройки")
     print(" Нажми Enter чтобы запустить помощника")

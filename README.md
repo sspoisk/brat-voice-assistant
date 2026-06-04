@@ -21,6 +21,13 @@ command line.
   Precise level via `pycaw`, with a media-key fallback.
 - 📸 **Screenshots** — `сделай скриншот` captures the screen, saves a timestamped PNG to
   `Pictures\Screenshots`, and opens Explorer with the new file selected.
+- 🎵 **Media control** — `пауза`, `плей`, `следующий трек`, `предыдущий трек` via system media
+  keys (works with Spotify, browser players, etc.).
+- 🌤️ **Weather** — `погода` / `погода в Москве` reads the current weather aloud (via free
+  `wttr.in`, no API key). Default city is configurable in settings.
+- 📋 **Clipboard** — `запиши в буфер` dictates text into the clipboard; `вставь` pastes it
+  (Ctrl+V) into the active window.
+- 🔒 **Lock & sleep** — `заблокируй` locks the screen, `спящий режим` puts the PC to sleep.
 - ⏱️ **Timers & alarms** — `таймер на 5 минут`, `будильник на 7 утра`, with audible beeps.
 - 🗂️ **File operations** — move files (`перемести файл отчёт в загрузки`) and replace text inside
   text files (with an automatic `.bak` backup before writing).
@@ -64,8 +71,23 @@ pip install -r requirements.txt
 > `pip install pipwin && pipwin install pyaudio`, or grab a wheel matching your Python version.
 
 For a Russian text-to-speech voice, install a Russian SAPI5 voice in Windows
-(*Settings → Time & Language → Speech*). The script auto-selects a Russian / "Irina" voice if one
-is present; otherwise it falls back to the default system voice.
+(*Settings → Time & Language → Speech*). The script prefers a **male Russian voice (Pavel)**, then
+any Russian voice (Irina), then the default system voice. You can switch the voice in the settings
+menu (`7. Голос`).
+
+### Male voice (Pavel)
+
+Windows ships the male Russian voice **"Microsoft Pavel"** as a *OneCore* voice, which `pyttsx3`
+(SAPI5) does not see by default — so only the female *Irina* shows up. Expose Pavel to SAPI5 with
+one command in an **elevated** PowerShell/Command Prompt:
+
+```cmd
+reg copy "HKLM\SOFTWARE\Microsoft\Speech_OneCore\Voices\Tokens\MSTTS_V110_ruRU_PavelM" "HKLM\SOFTWARE\Microsoft\Speech\Voices\Tokens\MSTTS_V110_ruRU_PavelM" /s /f
+```
+
+This only *copies* an existing voice token (additive, reversible — delete the destination key to
+undo). After that the assistant speaks with the cheerful male voice automatically. If Pavel is not
+installed at all, add the Russian language speech pack first.
 
 ---
 
@@ -92,6 +114,12 @@ On start:
 | `брат, громкость на 50 процентов`    | Sets system volume to 50%             |
 | `брат, выключи звук` / `включи звук`  | Mute / unmute                         |
 | `брат, сделай скриншот`              | Saves a screenshot to Pictures\Screenshots |
+| `брат, пауза` / `брат, плей`         | Pause / resume playback               |
+| `брат, следующий трек`               | Next track                            |
+| `брат, погода` / `погода в киеве`    | Reads current weather aloud           |
+| `брат, запиши в буфер`               | Dictate text → clipboard              |
+| `брат, заблокируй`                   | Locks the screen                      |
+| `брат, спящий режим`                 | Puts the PC to sleep                  |
 | `брат, открой ютуб`                  | Opens YouTube                         |
 | `брат, найди на ютубе котики`        | Opens a YouTube search for "котики"   |
 | `брат, таймер на 10 минут`           | Starts a 10-minute timer              |
