@@ -1,0 +1,20 @@
+# Local runtime files (generated on first run)
+settings.json
+apps_cache.json
+
+# Backups created by the "replace text in file" command
+*.bak
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

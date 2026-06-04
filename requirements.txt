@@ -1,0 +1,7 @@
+SpeechRecognition>=3.10.0
+pyttsx3>=2.90
+fuzzywuzzy>=0.18.0
+PyAudio>=0.2.13
+pyautogui>=0.9.54
+# Optional but recommended — removes the "using slow pure-python SequenceMatcher" warning
+python-Levenshtein>=0.21.0
