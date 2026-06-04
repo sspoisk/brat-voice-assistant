@@ -170,6 +170,7 @@ class BratApp(ctk.CTk):
         self.listening = False
 
         self._build_ui()
+        self.protocol("WM_DELETE_WINDOW", self._on_close)
 
         self.log(f"🚀 БРАТ запущен (HWID: {_get_hwid()})")
         self.log(f"👤 Пользователь: {self.settings.get('user_name', 'Слава')}")
@@ -186,6 +187,18 @@ class BratApp(ctk.CTk):
             if re.search(r'\b' + re.escape(w) + r'\b', text):
                 return w
         return None
+
+    def _on_close(self):
+        """Аккуратное завершение: гасим прослушивание и озвучку, потом окно."""
+        self.listening = False
+        try:
+            brat.speech_queue.put(None)
+        except Exception:
+            pass
+        try:
+            self.destroy()
+        except Exception:
+            pass
 
     def _wake_hint(self):
         words = ", ".join(self.wake_words)
