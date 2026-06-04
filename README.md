@@ -81,6 +81,8 @@ On start:
 | You say                              | What happens                          |
 | ------------------------------------ | ------------------------------------- |
 | `брат, открой телеграм`              | Launches Telegram                     |
+| `брат, закрой телеграм`              | Closes Telegram (via `taskkill`)      |
+| `брат, заверши хром`                 | Closes the browser process            |
 | `брат, браузер`                      | Opens your browser (asks which one)   |
 | `брат, открой ютуб`                  | Opens YouTube                         |
 | `брат, найди на ютубе котики`        | Opens a YouTube search for "котики"   |

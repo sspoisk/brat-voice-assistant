@@ -859,6 +859,81 @@ def parse_youtube_command(text):
     return True
 
 # ============================================
+# ЗАКРЫТИЕ ПРИЛОЖЕНИЯ
+# Команды:
+#   "закрой телеграм"  /  "заверши хром"  /  "закрой браузер"
+# ============================================
+CLOSE_TRIGGERS = ["закрой", "закрыть", "заверши", "завершить", "прикрой", "убей"]
+# системные значения из app_aliases, которые нельзя/не нужно "закрывать"
+_NON_KILLABLE = ("lock", "screenshot")
+
+def _resolve_kill_targets(query, installed_apps):
+    """ По произнесённому имени возвращает список .exe для taskkill (или None). """
+    query = query.lower().strip()
+    # 1. конкретный браузер по имени (хром/опера/edge/яндекс/brave/фаерфокс)
+    bq = query
+    for alias, canonical in BROWSER_ALIASES.items():
+        if alias in bq:
+            bq = bq.replace(alias, canonical)
+    for bname, paths in KNOWN_BROWSERS.items():
+        if bname == bq or fuzz.token_sort_ratio(bq, bname) > 85:
+            return [os.path.basename(paths[0])]
+    # 2. словарь алиасов (точно или фаззи)
+    cmd = None
+    if query in app_aliases:
+        cmd = app_aliases[query]
+    elif app_aliases:
+        best, score = process.extractOne(query, app_aliases.keys(), scorer=fuzz.token_sort_ratio)
+        if score > 80:
+            cmd = app_aliases[best]
+    if cmd == "__browser__":
+        names = [os.path.basename(p) for p in get_installed_browsers().values()]
+        return names or None
+    if cmd and not (cmd.startswith("http") or cmd.startswith("shutdown")
+                    or cmd.startswith("ms-settings") or cmd in _NON_KILLABLE):
+        return [cmd if cmd.lower().endswith(".exe") else cmd + ".exe"]
+    # 3. кэш установленных приложений
+    if installed_apps:
+        best, score = process.extractOne(query, installed_apps.keys(), scorer=fuzz.token_sort_ratio)
+        if score > 75:
+            return [os.path.basename(installed_apps[best])]
+    return None
+
+def parse_close_command(text, installed_apps):
+    """ Обрабатывает "закрой/заверши X". Возвращает True если команда была про закрытие. """
+    text_lower = text.lower()
+    if not any(w in text_lower for w in CLOSE_TRIGGERS):
+        return False
+    # убираем триггеры и слова-наполнители ПО ГРАНИЦАМ СЛОВ
+    # (иначе "окно" вырезается из "блокнот" -> "бл т")
+    query = text_lower
+    for w in CLOSE_TRIGGERS + ["приложение", "программу", "программа",
+                               "окно", "окна", "процесс", "мне", "это"]:
+        query = re.sub(r'\b' + re.escape(w) + r'\b', ' ', query)
+    query = re.sub(r'\s+', ' ', query).strip()
+    if not query:
+        speak("Что закрыть? Назови приложение.")
+        return True
+    targets = _resolve_kill_targets(query, installed_apps)
+    if not targets:
+        speak(f"Не знаю что закрывать по слову '{query}'.")
+        return True
+    closed = []
+    for img in targets:
+        try:
+            r = subprocess.run(["taskkill", "/F", "/IM", img],
+                               capture_output=True, text=True)
+            if r.returncode == 0:
+                closed.append(img)
+        except Exception:
+            continue
+    if closed:
+        speak(f"Закрыл: {', '.join(closed)}")
+    else:
+        speak(f"Не нашёл запущенное приложение '{query}'.")
+    return True
+
+# ============================================
 # ОБРАБОТЧИК КОМАНД
 # ============================================
 def process_command(text, installed_apps, installed_browsers, recognizer, settings):
@@ -890,6 +965,9 @@ def process_command(text, installed_apps, installed_browsers, recognizer, settin
         return
     # 4.5 YouTube (открыть / поиск голосом)
     if parse_youtube_command(text):
+        return
+    # 4.6 Закрытие приложения
+    if parse_close_command(text, installed_apps):
         return
     # 5. Убираем триггерные слова
     clean_text = text
