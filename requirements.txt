@@ -4,5 +4,6 @@ fuzzywuzzy>=0.18.0
 PyAudio>=0.2.13
 pyautogui>=0.9.54
 pycaw>=20230407
+Pillow>=9.0.0
 # Optional but recommended — removes the "using slow pure-python SequenceMatcher" warning
 python-Levenshtein>=0.21.0

@@ -1057,6 +1057,58 @@ def parse_volume_command(text):
     return True
 
 # ============================================
+# СКРИНШОТ
+# Команды:
+#   "сделай скриншот" / "снимок экрана" / "заскринь"
+# Сохраняет PNG в %USERPROFILE%\Pictures\Screenshots с датой в имени
+# и открывает папку с выделенным файлом.
+# ============================================
+SCREENSHOT_TRIGGERS = ["скриншот", "снимок экрана", "сфотографируй экран",
+                       "сфоткай экран", "сделай скрин", "скрин экрана",
+                       "заскринь", "печать экрана", "скрин"]
+
+def parse_screenshot_command(text):
+    """ Делает скриншот всего экрана. Возвращает True если команда была про скриншот. """
+    t = text.lower()
+    if not any(w in t for w in SCREENSHOT_TRIGGERS):
+        return False
+
+    folder = os.path.expandvars(r"%USERPROFILE%\Pictures\Screenshots")
+    try:
+        os.makedirs(folder, exist_ok=True)
+    except Exception:
+        folder = os.path.expandvars(r"%USERPROFILE%\Pictures")
+
+    fname = "screenshot_" + datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S") + ".png"
+    path = os.path.join(folder, fname)
+
+    img = None
+    try:
+        from PIL import ImageGrab
+        img = ImageGrab.grab(all_screens=True)
+    except Exception:
+        try:
+            import pyautogui
+            img = pyautogui.screenshot()
+        except Exception as e:
+            speak(f"Не смог сделать скриншот: {e}")
+            return True
+
+    try:
+        img.save(path)
+    except Exception as e:
+        speak(f"Не смог сохранить скриншот: {e}")
+        return True
+
+    speak("Скриншот готов, сохранил в папку скриншоты")
+    # Открываем проводник с выделенным файлом
+    try:
+        subprocess.Popen(f'explorer /select,"{path}"')
+    except Exception:
+        pass
+    return True
+
+# ============================================
 # ОБРАБОТЧИК КОМАНД
 # ============================================
 def process_command(text, installed_apps, installed_browsers, recognizer, settings):
@@ -1094,6 +1146,9 @@ def process_command(text, installed_apps, installed_browsers, recognizer, settin
         return
     # 4.7 Громкость звука
     if parse_volume_command(text):
+        return
+    # 4.8 Скриншот
+    if parse_screenshot_command(text):
         return
     # 5. Убираем триггерные слова
     clean_text = text

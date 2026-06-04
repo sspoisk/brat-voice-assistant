@@ -19,6 +19,8 @@ command line.
   to open if several are installed.
 - 🔉 **System volume control** — `громче`, `тише`, `громкость на 50 процентов`, `выключи звук`.
   Precise level via `pycaw`, with a media-key fallback.
+- 📸 **Screenshots** — `сделай скриншот` captures the screen, saves a timestamped PNG to
+  `Pictures\Screenshots`, and opens Explorer with the new file selected.
 - ⏱️ **Timers & alarms** — `таймер на 5 минут`, `будильник на 7 утра`, with audible beeps.
 - 🗂️ **File operations** — move files (`перемести файл отчёт в загрузки`) and replace text inside
   text files (with an automatic `.bak` backup before writing).
@@ -89,6 +91,7 @@ On start:
 | `брат, громче` / `брат, тише`        | Volume up / down by 10%               |
 | `брат, громкость на 50 процентов`    | Sets system volume to 50%             |
 | `брат, выключи звук` / `включи звук`  | Mute / unmute                         |
+| `брат, сделай скриншот`              | Saves a screenshot to Pictures\Screenshots |
 | `брат, открой ютуб`                  | Opens YouTube                         |
 | `брат, найди на ютубе котики`        | Opens a YouTube search for "котики"   |
 | `брат, таймер на 10 минут`           | Starts a 10-minute timer              |
