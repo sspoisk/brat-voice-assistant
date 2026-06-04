@@ -14,6 +14,7 @@ DARK / БРАТ — графическая оболочка поверх дви�
 """
 import os
 import sys
+import re
 import json
 import datetime
 import threading
@@ -179,10 +180,18 @@ class BratApp(ctk.CTk):
         self.after(800, lambda: brat.speak(
             f"Привет, {self.settings.get('user_name', 'Слава')}! Брат готов."))
 
+    def _find_wake(self, text):
+        """Ищет кодовое слово целым словом (по границам), не как подстроку."""
+        for w in self.wake_words:
+            if re.search(r'\b' + re.escape(w) + r'\b', text):
+                return w
+        return None
+
     def _wake_hint(self):
-        if self.settings.get("require_wake", False):
-            return f"Скажи «{', '.join(self.wake_words)}», затем команду"
-        return "Просто говори команду — слово «брат» не обязательно"
+        words = ", ".join(self.wake_words)
+        if self.settings.get("require_wake", True):
+            return f"Скажи «{words}», затем команду"
+        return "Можно говорить без кодового слова"
 
     # ---------- UI ----------
     def _build_ui(self):
@@ -287,16 +296,20 @@ class BratApp(ctk.CTk):
                 continue
             self.log(f"🗣 Услышал: {text}")
 
-            require_wake = self.settings.get("require_wake", False)
-            matched = next((w for w in self.wake_words if w in text), None)
+            require_wake = self.settings.get("require_wake", True)
+            # Кодовое слово ищем ЦЕЛЫМ словом (\b), чтобы "бот" не срабатывал
+            # внутри "работа", "суббота" и т.п.
+            matched = self._find_wake(text)
 
-            # Режим без активации: любая фраза = команда.
-            # Слово 'брат' срезаем, если оно прозвучало.
             if require_wake and not matched:
-                self.log("💤 Нет слова активации — пропускаю")
+                self.log("💤 Нет кодового слова — пропускаю")
                 continue
 
-            command = text.replace(matched, "").strip() if matched else text.strip()
+            if matched:
+                command = re.sub(r'\b' + re.escape(matched) + r'\b', ' ', text, count=1).strip()
+                command = re.sub(r'\s+', ' ', command)
+            else:
+                command = text.strip()
             if not command:
                 command = "__wake_only__"
 
@@ -372,9 +385,9 @@ class BratApp(ctk.CTk):
         # Требовать слово активации
         fr_wake = ctk.CTkFrame(win, fg_color=BG_CARD, corner_radius=10)
         fr_wake.pack(fill="x", padx=20, pady=5)
-        ctk.CTkLabel(fr_wake, text="Требовать слово «брат»", font=("Arial", 12), text_color=TEXT_SEC,
+        ctk.CTkLabel(fr_wake, text="Требовать кодовое слово", font=("Arial", 12), text_color=TEXT_SEC,
                      width=150, anchor="w").pack(side="left", padx=12, pady=10)
-        reqwake_var = ctk.BooleanVar(value=self.settings.get("require_wake", False))
+        reqwake_var = ctk.BooleanVar(value=self.settings.get("require_wake", True))
         ctk.CTkSwitch(fr_wake, text="", variable=reqwake_var, progress_color=ACCENT2).pack(
             side="right", padx=12, pady=10)
 
