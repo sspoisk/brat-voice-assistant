@@ -106,7 +106,15 @@ no API key) via the `edge-tts` package. Default voice: `ru-RU-DmitryNeural` (liv
 
 ---
 
-## Usage
+## Two ways to run
+
+- **`python brat.py`** — console version (no extra UI dependencies).
+- **`python dark_gui.py`** — dark-themed **GUI** (customtkinter): live log, manual text input,
+  Listen button, settings window, and an optional license/protection layer (HWID + integrity,
+  `DEV_MODE = True` by default so it never blocks personal use). The GUI is a thin shell over the
+  same engine — every voice command and voice below works identically in both.
+
+## Usage (console)
 
 ```bash
 python brat.py

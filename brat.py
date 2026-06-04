@@ -125,8 +125,16 @@ def speak_worker():
 worker_thread = threading.Thread(target=speak_worker, daemon=True)
 worker_thread.start()
 
+# GUI (dark_gui.py) может подставить колбэк, чтобы озвучка попадала в лог окна
+on_speak = None
+
 def speak(text):
     print(f"Брат: {text}")
+    if on_speak:
+        try:
+            on_speak(text)
+        except Exception:
+            pass
     speech_queue.put(text)
 
 # ============================================
