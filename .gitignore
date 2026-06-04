@@ -5,6 +5,14 @@ apps_cache.json
 # Backups created by the "replace text in file" command
 *.bak
 
+# Logs and local temp/scratch files
+*.log
+_*.py
+
+# License / integrity files (GUI protection layer)
+license.key
+integrity.hash
+
 # Python
 __pycache__/
 *.py[cod]
