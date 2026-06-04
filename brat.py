@@ -752,11 +752,11 @@ def handle_browser_command(installed_browsers, recognizer):
 # ============================================
 # РАСПОЗНАВАНИЕ РЕЧИ
 # ============================================
-def _listen_once(recognizer, timeout=5):
+def _listen_once(recognizer, timeout=5, phrase_limit=8):
     try:
         with sr.Microphone() as source:
-            recognizer.adjust_for_ambient_noise(source, duration=0.3)
-            audio = recognizer.listen(source, timeout=timeout, phrase_time_limit=5)
+            recognizer.adjust_for_ambient_noise(source, duration=0.2)
+            audio = recognizer.listen(source, timeout=timeout, phrase_time_limit=phrase_limit)
             text = recognizer.recognize_google(audio, language="ru-RU")
             print(f"Услышал: {text}")
             return text.lower()
@@ -962,22 +962,54 @@ def parse_file_command(text, recognizer):
 #   "включи на ютубе джаз"   -> поиск по запросу
 # ============================================
 YOUTUBE_WORDS = ["ютубе", "ютуб", "ютьюб", "ютюб", "youtube", "ютьюбе"]
+# Намерение "найти/включить произведение" ведём в поиск YouTube даже без слова "ютуб"
+SONG_INTENT = ["найди песню", "найди трек", "найди клип", "найди композицию",
+               "найди видео", "найди ролик", "включи песню", "включи трек",
+               "включи клип", "включи композицию", "включи видео",
+               "поставь песню", "поставь трек", "поставь клип", "спой песню",
+               "хочу послушать", "хочу песню", "хочу трек"]
 
-def parse_youtube_command(text):
-    """ Если в команде есть 'ютуб' — открывает YouTube.
-    С хвостом после слова 'ютуб' — открывает поиск по этому запросу.
-    Возвращает True если команда была про YouTube. """
+def _extract_youtube_query(text_lower):
+    """Вырезает триггеры/слово 'ютуб', НЕ ломая предлоги внутри названия."""
+    q = text_lower
+    # сначала убираем 'на/в/по ютубе' как цельные фразы (предлог тут служебный)
+    for ph in ["на ютубе", "в ютубе", "по ютубе", "на ютуб", "в ютуб",
+               "на youtube", "в youtube", "на ютьюбе", "в ютьюбе"]:
+        q = q.replace(ph, " ")
+    # одиночные слова 'ютуб'
+    for w in YOUTUBE_WORDS:
+        q = re.sub(r'\b' + re.escape(w) + r'\b', ' ', q)
+    # триггеры и категории как отдельные слова (предлоги в/на/по НЕ трогаем —
+    # они могут быть частью названия, напр. "в лесу родилась ёлочка")
+    for w in ["открой", "открыть", "запусти", "запустить", "включи", "включить",
+              "поставь", "найди", "поищи", "покажи", "спой", "мне", "пожалуйста",
+              "хочу", "послушать", "песню", "песня", "трек", "клип",
+              "композицию", "композиция", "видео", "ролик"]:
+        q = re.sub(r'\b' + re.escape(w) + r'\b', ' ', q)
+    return re.sub(r'\s+', ' ', q).strip()
+
+def parse_youtube_command(text, recognizer=None):
+    """ YouTube: открыть главную или поиск по запросу.
+    Триггерится на 'ютуб' ИЛИ на 'найди/включи песню/трек/клип/видео'.
+    Если название не расслышали — переспрашивает голосом (ловит конкретное
+    произведение отдельной фразой с увеличенным окном записи). """
     text_lower = text.lower()
-    if not any(w in text_lower for w in YOUTUBE_WORDS):
+    has_yt = any(w in text_lower for w in YOUTUBE_WORDS)
+    has_song = any(w in text_lower for w in SONG_INTENT)
+    if not (has_yt or has_song):
         return False
 
-    # Чистим триггеры, предлоги и само слово 'ютуб' — остаётся поисковый запрос
-    junk = ["открой", "открыть", "запусти", "запустить", "включи", "включить",
-            "найди", "поищи", "покажи", "на", "в", "мне"] + YOUTUBE_WORDS
-    query = text_lower
-    for w in junk:
-        query = re.sub(r'\b' + re.escape(w) + r'\b', ' ', query)
-    query = re.sub(r'\s+', ' ', query).strip()
+    query = _extract_youtube_query(text_lower)
+
+    # Запрос пуст. Переспрашиваем ТОЛЬКО при намерении поиска
+    # ("найди/поставь/хочу..."), а не на простое "открой ютуб".
+    find_intent = has_song or any(w in text_lower for w in
+                                  ["найди", "поищи", "покажи", "поставь", "спой", "хочу"])
+    if not query and find_intent and recognizer is not None:
+        speak("Что найти на Ютубе? Назови песню или видео.")
+        ans = _listen_once(recognizer, timeout=8, phrase_limit=9)
+        if ans:
+            query = ans.strip()
 
     if query:
         url = "https://www.youtube.com/results?search_query=" + urllib.parse.quote(query)
@@ -1477,7 +1509,7 @@ def process_command(text, installed_apps, installed_browsers, recognizer, settin
     if parse_time_command(text):
         return
     # 4.5 YouTube (открыть / поиск голосом)
-    if parse_youtube_command(text):
+    if parse_youtube_command(text, recognizer):
         return
     # 4.6 Закрытие приложения
     if parse_close_command(text, installed_apps):
