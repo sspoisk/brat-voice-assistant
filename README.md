@@ -36,6 +36,9 @@ command line.
   aliases. Everything is saved to `settings.json`.
 - 🔊 **Offline text-to-speech** via `pyttsx3` (Windows SAPI5 voices). Speech **recognition** uses
   Google's free API and needs an internet connection.
+- 🗣️ **Optional live neural voice** via **Edge-TTS** (free, online) — a much more natural Russian
+  male voice (`ru-RU-DmitryNeural`). Toggle by voice (`включи живой голос` / `обычный голос`) or in
+  settings; falls back to the offline voice automatically when offline.
 
 ---
 
@@ -88,6 +91,18 @@ reg copy "HKLM\SOFTWARE\Microsoft\Speech_OneCore\Voices\Tokens\MSTTS_V110_ruRU_P
 This only *copies* an existing voice token (additive, reversible — delete the destination key to
 undo). After that the assistant speaks with the cheerful male voice automatically. If Pavel is not
 installed at all, add the Russian language speech pack first.
+
+### Live neural voice (Edge-TTS, optional)
+
+For a far more natural voice, the assistant can use **Microsoft Edge's online neural TTS** (free,
+no API key) via the `edge-tts` package. Default voice: `ru-RU-DmitryNeural` (lively male).
+
+- Enable it by voice: say **`брат, включи живой голос`** (and `брат, обычный голос` to switch back),
+  or set it in the settings menu (`8. Живой голос Edge`).
+- It requires an internet connection. If Edge-TTS fails (offline), the assistant automatically
+  falls back to the offline `pyttsx3`/Pavel voice.
+- Audio is synthesized to a temporary MP3 and played through the system MCI player (no extra
+  binaries needed).
 
 ---
 

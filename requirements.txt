@@ -6,5 +6,6 @@ pyautogui>=0.9.54
 pycaw>=20230407
 Pillow>=9.0.0
 pyperclip>=1.8.2
+edge-tts>=6.1.0   # optional: live neural voice (online); offline pyttsx3 is the default
 # Optional but recommended — removes the "using slow pure-python SequenceMatcher" warning
 python-Levenshtein>=0.21.0

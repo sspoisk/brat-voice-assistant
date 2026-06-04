@@ -60,6 +60,49 @@ def apply_voice(prefer="pavel"):
 
 apply_voice("pavel")
 
+# ----- Режим озвучки -----
+# "offline" -> pyttsx3/Pavel (без интернета)
+# "edge"    -> живой нейросетевой голос Edge-TTS (нужен интернет)
+TTS_MODE = "offline"
+EDGE_VOICE = "ru-RU-DmitryNeural"   # живой мужской русский голос
+
+def _offline_say(text):
+    engine.say(text)
+    engine.runAndWait()
+
+def _play_audio_file(path):
+    """Проигрывает mp3 через системный MCI (winmm), без доп. зависимостей."""
+    import ctypes
+    alias = "brat_tts"
+    mci = ctypes.windll.winmm.mciSendStringW
+    mci(f'close {alias}', None, 0, None)
+    err = mci(f'open "{path}" type mpegvideo alias {alias}', None, 0, None)
+    if err != 0:
+        mci(f'open "{path}" alias {alias}', None, 0, None)
+    mci(f'play {alias} wait', None, 0, None)
+    mci(f'close {alias}', None, 0, None)
+
+def _edge_say(text):
+    """Синтез через Edge-TTS -> временный mp3 -> проигрывание."""
+    import asyncio, sys, tempfile, os as _os, edge_tts
+    if sys.platform.startswith("win"):
+        # aiohttp/aiodns на Windows требует SelectorEventLoop
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+    fd, path = tempfile.mkstemp(suffix=".mp3")
+    _os.close(fd)
+
+    async def _gen():
+        await edge_tts.Communicate(text, EDGE_VOICE).save(path)
+
+    asyncio.run(_gen())
+    try:
+        _play_audio_file(path)
+    finally:
+        try:
+            _os.remove(path)
+        except Exception:
+            pass
+
 speech_queue = queue.Queue()
 
 def speak_worker():
@@ -68,8 +111,14 @@ def speak_worker():
         if text is None:
             break
         try:
-            engine.say(text)
-            engine.runAndWait()
+            if TTS_MODE == "edge":
+                try:
+                    _edge_say(text)
+                except Exception as e:
+                    print(f"Edge-TTS недоступен ({e}), включаю офлайн-голос")
+                    _offline_say(text)
+            else:
+                _offline_say(text)
         except Exception as e:
             print(f"Ошибка озвучки: {e}")
 
@@ -91,6 +140,8 @@ DEFAULT_SETTINGS = {
     "speech_volume": 1.0,
     "weather_city": "Харьков",
     "voice": "pavel",
+    "tts_engine": "offline",
+    "edge_voice": "ru-RU-DmitryNeural",
     "custom_aliases": {},
 }
 
@@ -171,7 +222,8 @@ def settings_menu(settings):
         print(f" 5. Мои алиасы команд : {len(settings['custom_aliases'])} шт.")
         print(f" 6. Город для погоды : {settings.get('weather_city', 'Харьков')}")
         print(f" 7. Голос (м/ж)       : {settings.get('voice', 'pavel')}")
-        print(f" 8. Сбросить настройки")
+        print(f" 8. Живой голос Edge  : {settings.get('tts_engine', 'offline')} ({settings.get('edge_voice', 'ru-RU-DmitryNeural')})")
+        print(f" 9. Сбросить настройки")
         print(f" 0. Выйти из настроек")
         print("="*50)
         choice = input("Выбери пункт: ").strip()
@@ -254,6 +306,24 @@ def settings_menu(settings):
             else:
                 print("Не изменено.")
         elif choice == "8":
+            global TTS_MODE, EDGE_VOICE
+            print(f"\nСейчас: {settings.get('tts_engine', 'offline')}")
+            print(" 1 — живой Edge-TTS (онлайн, голос Дмитрия)")
+            print(" 2 — обычный офлайн (Pavel)")
+            sub = input("Выбери (1/2): ").strip()
+            if sub == "1":
+                settings["tts_engine"] = "edge"
+                TTS_MODE = "edge"
+                save_settings(settings)
+                print("Включён живой голос Edge-TTS.")
+            elif sub == "2":
+                settings["tts_engine"] = "offline"
+                TTS_MODE = "offline"
+                save_settings(settings)
+                print("Включён обычный офлайн-голос.")
+            else:
+                print("Не изменено.")
+        elif choice == "9":
             confirm = input("Сбросить ВСЕ настройки? (да/нет): ").strip().lower()
             if confirm == "да":
                 settings.update(DEFAULT_SETTINGS.copy())
@@ -1356,6 +1426,27 @@ def parse_power_command(text):
     return False
 
 # ============================================
+# ПЕРЕКЛЮЧЕНИЕ ГОЛОСА (живой Edge-TTS / обычный офлайн)
+# Команды:
+#   "включи живой голос" / "красивый голос"  -> Edge-TTS (онлайн)
+#   "обычный голос" / "офлайн голос"          -> pyttsx3 / Pavel
+# ============================================
+def parse_tts_command(text):
+    global TTS_MODE
+    t = text.lower()
+    if any(w in t for w in ["живой голос", "онлайн голос", "нейросетевой голос",
+                            "красивый голос", "голос дмитрия", "включи живой"]):
+        TTS_MODE = "edge"
+        speak("Переключаюсь на живой голос")
+        return True
+    if any(w in t for w in ["обычный голос", "офлайн голос", "оффлайн голос",
+                            "простой голос", "верни обычный голос", "выключи живой"]):
+        TTS_MODE = "offline"
+        speak("Возвращаю обычный голос")
+        return True
+    return False
+
+# ============================================
 # ОБРАБОТЧИК КОМАНД
 # ============================================
 def process_command(text, installed_apps, installed_browsers, recognizer, settings):
@@ -1409,6 +1500,9 @@ def process_command(text, installed_apps, installed_browsers, recognizer, settin
     # 4.12 Блокировка / сон ПК
     if parse_power_command(text):
         return
+    # 4.13 Переключение голоса (живой / обычный)
+    if parse_tts_command(text):
+        return
     # 5. Убираем триггерные слова
     clean_text = text
     for word in sorted(trigger_words, key=len, reverse=True):
@@ -1438,10 +1532,13 @@ def process_command(text, installed_apps, installed_browsers, recognizer, settin
 # ГЛАВНЫЙ ЦИКЛ
 # ============================================
 def main():
+    global TTS_MODE, EDGE_VOICE
     settings = load_settings()
     engine.setProperty('rate', settings["speech_rate"])
     engine.setProperty('volume', settings["speech_volume"])
     apply_voice(settings.get("voice", "pavel"))
+    TTS_MODE = settings.get("tts_engine", "offline")
+    EDGE_VOICE = settings.get("edge_voice", "ru-RU-DmitryNeural")
     print("\n" + "="*50)
     print(" Нажми S + Enter чтобы зайти в настройки")
     print(" Нажми Enter чтобы запустить помощника")
