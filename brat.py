@@ -824,7 +824,11 @@ def _recognize_multilang(recognizer, audio):
         conf = alts[0].get("confidence", 0.0) or 0.0
         if transcript and conf > best_conf:
             best_conf, best_text = conf, transcript
-        if transcript and conf >= 0.85:   # уверенно -> второй язык не нужен
+        # Ранний выход: если первый язык дал результат (или он один) — второй
+        # запрос к Google не делаем. Ускоряет типичный (русский) случай вдвое.
+        if transcript and (conf >= 0.6 or len(RECOGNITION_LANGS) == 1):
+            break
+        if transcript and conf == 0.0:   # Google не вернул confidence -> доверяем первому
             break
     if best_text is None and net_error:
         raise sr.RequestError("network")
@@ -835,7 +839,11 @@ def _listen_once(recognizer, timeout=5, phrase_limit=8):
     wait_until_quiet()
     try:
         with sr.Microphone() as source:
-            recognizer.adjust_for_ambient_noise(source, duration=0.2)
+            # Калибровка шума — один раз на старте, дальше пропускаем (экономит ~0.2с/цикл)
+            if not getattr(recognizer, "_brat_calibrated", False):
+                recognizer.adjust_for_ambient_noise(source, duration=0.4)
+                recognizer.dynamic_energy_threshold = True
+                recognizer._brat_calibrated = True
             audio = recognizer.listen(source, timeout=timeout, phrase_time_limit=phrase_limit)
         text = _recognize_multilang(recognizer, audio)
         if not text:
