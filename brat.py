@@ -64,11 +64,31 @@ apply_voice("pavel")
 # "offline" -> pyttsx3/Pavel (без интернета)
 # "edge"    -> живой нейросетевой голос Edge-TTS (нужен интернет)
 TTS_MODE = "offline"
-EDGE_VOICE = "ru-RU-DmitryNeural"   # живой мужской русский голос
+EDGE_VOICE = "ru-RU-DmitryNeural"   # живой мужской русский голос (рус. текст)
+EDGE_VOICE_EN = "en-US-GuyNeural"   # живой английский голос (англ. текст)
+VOICE_PREF = "pavel"                 # офлайн-голос для рус. текста (для восстановления)
+
+def _text_is_english(text):
+    lat = sum(1 for c in text if 'a' <= c.lower() <= 'z')
+    cyr = sum(1 for c in text.lower() if 'а' <= c <= 'я' or c == 'ё')
+    return lat > cyr
 
 def _offline_say(text):
-    engine.say(text)
-    engine.runAndWait()
+    en = _text_is_english(text)
+    if en:
+        try:
+            apply_voice("zira")          # английский голос для англ. текста
+        except Exception:
+            en = False
+    try:
+        engine.say(text)
+        engine.runAndWait()
+    finally:
+        if en:
+            try:
+                apply_voice(VOICE_PREF)  # вернуть русский голос
+            except Exception:
+                pass
 
 def _play_audio_file(path):
     """Проигрывает mp3 через системный MCI (winmm), без доп. зависимостей."""
@@ -91,8 +111,9 @@ def _edge_say(text):
     fd, path = tempfile.mkstemp(suffix=".mp3")
     _os.close(fd)
 
+    voice = EDGE_VOICE_EN if _text_is_english(text) else EDGE_VOICE
     async def _gen():
-        await edge_tts.Communicate(text, EDGE_VOICE).save(path)
+        await edge_tts.Communicate(text, voice).save(path)
 
     asyncio.run(_gen())
     try:
@@ -169,6 +190,8 @@ DEFAULT_SETTINGS = {
     "voice": "pavel",
     "tts_engine": "offline",
     "edge_voice": "ru-RU-DmitryNeural",
+    "languages": ["ru-RU", "en-US"],   # распознавание: русский + английский
+    "allowed_folders": ["рабочий стол", "загрузки", "документы", "музыка", "видео", "картинки"],
     "custom_aliases": {},
 }
 
@@ -777,19 +800,48 @@ def handle_browser_command(installed_browsers, recognizer):
     os.startfile(list(installed_browsers.values())[0])
 
 # ============================================
-# РАСПОЗНАВАНИЕ РЕЧИ
+# РАСПОЗНАВАНИЕ РЕЧИ (русский + английский, авто-выбор)
 # ============================================
+RECOGNITION_LANGS = ["ru-RU", "en-US"]
+
+def _recognize_multilang(recognizer, audio):
+    """Распознаёт по нескольким языкам, выбирает вариант с большей уверенностью."""
+    best_text, best_conf, net_error = None, -1.0, False
+    for lang in RECOGNITION_LANGS:
+        try:
+            res = recognizer.recognize_google(audio, language=lang, show_all=True)
+        except sr.RequestError:
+            net_error = True
+            continue
+        except Exception:
+            continue
+        if not res or not isinstance(res, dict):
+            continue
+        alts = res.get("alternative") or []
+        if not alts:
+            continue
+        transcript = alts[0].get("transcript", "")
+        conf = alts[0].get("confidence", 0.0) or 0.0
+        if transcript and conf > best_conf:
+            best_conf, best_text = conf, transcript
+        if transcript and conf >= 0.85:   # уверенно -> второй язык не нужен
+            break
+    if best_text is None and net_error:
+        raise sr.RequestError("network")
+    return best_text
+
 def _listen_once(recognizer, timeout=5, phrase_limit=8):
-    # Не слушаем, пока ассистент говорит — иначе микрофон ловит его же голос
-    # ("Открываю Ютуб" -> снова открывает -> петля).
+    # Не слушаем, пока ассистент говорит — иначе микрофон ловит его же голос.
     wait_until_quiet()
     try:
         with sr.Microphone() as source:
             recognizer.adjust_for_ambient_noise(source, duration=0.2)
             audio = recognizer.listen(source, timeout=timeout, phrase_time_limit=phrase_limit)
-            text = recognizer.recognize_google(audio, language="ru-RU")
-            print(f"Услышал: {text}")
-            return text.lower()
+        text = _recognize_multilang(recognizer, audio)
+        if not text:
+            return None
+        print(f"Услышал: {text}")
+        return text.lower()
     except sr.WaitTimeoutError:
         return None
     except sr.UnknownValueError:
@@ -1584,6 +1636,15 @@ def process_command(text, installed_apps, installed_browsers, recognizer, settin
         return
     if result.startswith("__winsearch__"):
         query = result[len("__winsearch__"):]
+        # «Мозг»: нераспознанную свободную речь отдаём в LLM-пул, который
+        # подбирает существующий инструмент. Если мозг не справился/недоступен —
+        # обычный Win-поиск, как раньше (ничего не ломается).
+        try:
+            import brain
+            if brain.handle_freeform(text, recognizer, settings, installed_apps, installed_browsers):
+                return
+        except Exception as e:
+            print(f"brain недоступен: {e}")
         speak(f"Не нашёл '{clean_text}', ищу через Windows")
         _win_search(query)
         return
@@ -1594,13 +1655,15 @@ def process_command(text, installed_apps, installed_browsers, recognizer, settin
 # ГЛАВНЫЙ ЦИКЛ
 # ============================================
 def main():
-    global TTS_MODE, EDGE_VOICE
+    global TTS_MODE, EDGE_VOICE, VOICE_PREF, RECOGNITION_LANGS
     settings = load_settings()
     engine.setProperty('rate', settings["speech_rate"])
     engine.setProperty('volume', settings["speech_volume"])
-    apply_voice(settings.get("voice", "pavel"))
+    VOICE_PREF = settings.get("voice", "pavel")
+    apply_voice(VOICE_PREF)
     TTS_MODE = settings.get("tts_engine", "offline")
     EDGE_VOICE = settings.get("edge_voice", "ru-RU-DmitryNeural")
+    RECOGNITION_LANGS = settings.get("languages", ["ru-RU", "en-US"])
     print("\n" + "="*50)
     print(" Нажми S + Enter чтобы зайти в настройки")
     print(" Нажми Enter чтобы запустить помощника")

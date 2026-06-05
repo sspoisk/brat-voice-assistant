@@ -28,6 +28,13 @@ command line.
 - 📋 **Clipboard** — `запиши в буфер` dictates text into the clipboard; `вставь` pastes it
   (Ctrl+V) into the active window.
 - 🔒 **Lock & sleep** — `заблокируй` locks the screen, `спящий режим` puts the PC to sleep.
+- 🧠 **AI brain (free-form speech)** — when the fast parsers don't recognize a phrase, it's sent to
+  an LLM pool (over SSH, `brain.py`) which maps your natural sentence to one of the existing actions
+  (function-calling). The fast router stays first and instant; the brain is a fallback only.
+  Dangerous actions (close app, file ops, sleep/shutdown) require confirmation (voice **«да»** or a
+  button); file operations are restricted to a folder whitelist; every tool call is logged.
+- 🌍 **Bilingual** — recognition auto-detects Russian or English; the brain replies in your language
+  and the voice switches accordingly (Pavel/Dmitry for RU, Zira/Guy for EN).
 - ⏱️ **Timers & alarms** — `таймер на 5 минут`, `будильник на 7 утра`, with audible beeps.
 - 🗂️ **File operations** — move files (`перемести файл отчёт в загрузки`) and replace text inside
   text files (with an automatic `.bak` backup before writing).

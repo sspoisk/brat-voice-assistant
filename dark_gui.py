@@ -158,10 +158,21 @@ class BratApp(ctk.CTk):
         self.settings = brat.load_settings()
         brat.engine.setProperty('rate', self.settings.get("speech_rate", 195))
         brat.engine.setProperty('volume', self.settings.get("speech_volume", 1.0))
-        brat.apply_voice(self.settings.get("voice", "pavel"))
+        brat.VOICE_PREF = self.settings.get("voice", "pavel")
+        brat.apply_voice(brat.VOICE_PREF)
         brat.TTS_MODE = self.settings.get("tts_engine", "offline")
         brat.EDGE_VOICE = self.settings.get("edge_voice", "ru-RU-DmitryNeural")
+        brat.RECOGNITION_LANGS = self.settings.get("languages", ["ru-RU", "en-US"])
         brat.on_speak = self.log            # озвучка попадает в лог окна
+
+        # «Мозг» (LLM-пул): подтверждение опасных действий — голос + кнопка в окне
+        try:
+            import brain
+            brain.CONFIRM_FN = self._confirm_action
+            self._brain_ok = brain.BRAIN_ENABLED
+        except Exception as e:
+            self._brain_ok = False
+            print(f"brain init: {e}")
 
         self.apps_cache = brat.load_apps_cache()
         self.browsers = brat.get_installed_browsers()
@@ -199,6 +210,63 @@ class BratApp(ctk.CTk):
             self.destroy()
         except Exception:
             pass
+
+    def _confirm_action(self, description, recognizer):
+        """Подтверждение опасного действия: кнопки Да/Отмена + голос «да/нет». -> bool."""
+        result = {"val": None}
+        done = threading.Event()
+        holder = {}
+
+        def resolve(val):
+            if result["val"] is None:
+                result["val"] = val
+                done.set()
+
+        brat.speak(description + ". Подтверди: да или нет")
+        self.log(f"⚠ Подтверждение: {description}")
+
+        def build():
+            win = ctk.CTkToplevel(self)
+            win.title("Подтверждение")
+            win.geometry("470x190")
+            win.configure(fg_color=BG_DARK)
+            win.attributes("-topmost", True)
+            holder["win"] = win
+            ctk.CTkLabel(win, text="⚠ " + description, font=("Arial", 14), text_color=TEXT_PRI,
+                         wraplength=430, justify="left").pack(padx=20, pady=(22, 8))
+            ctk.CTkLabel(win, text="Скажи «да»/«нет» или нажми кнопку", font=("Arial", 11),
+                         text_color=TEXT_SEC).pack(pady=(0, 12))
+            r = ctk.CTkFrame(win, fg_color="transparent")
+            r.pack()
+            ctk.CTkButton(r, text="✓ Да", fg_color="#3fb950", hover_color="#2ea043",
+                          width=150, height=42, command=lambda: resolve(True)).pack(side="left", padx=10)
+            ctk.CTkButton(r, text="✗ Отмена", fg_color=ACCENT2, hover_color="#e0556f",
+                          width=150, height=42, command=lambda: resolve(False)).pack(side="left", padx=10)
+            win.protocol("WM_DELETE_WINDOW", lambda: resolve(False))
+
+        self.after(0, build)
+
+        def listen_voice():
+            ans = (brat._listen_once(recognizer, timeout=8) or "").lower()
+            if any(w in ans for w in ["нет", "отмен", "no", "cancel", "стоп"]):
+                resolve(False)
+            elif any(w in ans for w in ["да", "подтвержд", "давай", "ок", "окей", "yes", "confirm"]):
+                resolve(True)
+        threading.Thread(target=listen_voice, daemon=True).start()
+
+        done.wait(timeout=25)
+        if result["val"] is None:
+            result["val"] = False
+
+        def close():
+            w = holder.get("win")
+            if w:
+                try:
+                    w.destroy()
+                except Exception:
+                    pass
+        self.after(0, close)
+        return result["val"]
 
     def _wake_hint(self):
         words = ", ".join(self.wake_words)

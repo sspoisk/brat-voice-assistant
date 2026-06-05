@@ -8,6 +8,10 @@ apps_cache.json
 # Logs and local temp/scratch files
 *.log
 _*.py
+logs/
+
+# Brain config (local; no secrets, but keep out of git)
+.env
 
 # License / integrity files (GUI protection layer)
 license.key
